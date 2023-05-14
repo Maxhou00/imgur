@@ -12,11 +12,43 @@ module Imgur
   ALBUM_CREATE_PATH = 'album'
   ACCOUNT_PATH = 'account/'
 
+  class OAuthClient
+    attr_accessor :client_id, :client_secret, :refresh_token
+
+    def initialize(client_id, client_secret: nil, refresh_token: nil)
+      @client_id     = client_id
+      @client_secret = client_secret
+      @refresh_token = refresh_token
+    end
+
+    def upload_from_url(url)
+      body = {image: url, type: 'url'}
+      resp = HTTParty.post(API_PATH + UPLOAD_PATH, headers: { "Authorization" => "Bearer #{access_token}" }, body: body).parsed_response
+      # the Imgur API doesn't send title or description back apparently.
+      data = resp['data'].merge({'title' => body[:title], 'description' => body[:description]})
+      Image.new(data)
+    end
+
+    private
+
+    def access_token
+      @access_token ||= HTTParty.post(
+        'https://api.imgur.com/oauth2/token',
+        body: {
+          refresh_token: refresh_token,
+          client_id: client_id,
+          client_secret: client_secret,
+          grant_type: 'refresh_token'
+        }
+      )
+    end
+  end
+
   class Client
     attr_accessor :client_id
 
     def initialize(client_id)
-      @client_id = client_id
+      @client_id     = client_id
     end
 
     def post(url, body={})
@@ -271,8 +303,9 @@ module Imgur
     end
   end
 
-  def self.new(client_id)
-    Client.new client_id
-  end
+  def self.new(client_id, client_secret: nil, refresh_token: nil)
+    return Client.new(client_id) unless client_secret && refresh_token
 
+    OAuthClient.new(client_id, client_secret: client_secret, refresh_token: refresh_token)
+  end
 end
